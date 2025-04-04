@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>カウントダウンカレンダー作成ツール</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input[type="date"], button {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .checkbox-group input {
+      margin-right: 5px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .preview-container {
+      margin-top: 30px;
+      border-top: 1px solid #ddd;
+      padding-top: 20px;
+    }
+    #previewArea {
+      display: none;
+    }
+    .pdf-page {
+      width: 210mm;
+      height: 297mm;
+      background-color: white;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      page-break-after: always;
+    }
+    .page-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      width: 210mm;
+      height: 297mm;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      border: 1px dashed #999;
+      box-sizing: border-box;
+      height: 99mm;
+      position: relative;
+    }
+    .number {
+      font-size: 80px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .date {
+      font-size: 14px;
+      text-align: center;
+      margin-top: 5px;
+    }
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #previewArea, #previewArea * {
+        visibility: visible;
+      }
+      #previewArea {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>カウントダウンカレンダー作成ツール</h1>
+    
+    <div class="form-group">
+      <label for="startDate">開始日付:</label>
+      <input type="date" id="startDate" required>
+    </div>
+    
+    <div class="form-group">
+      <label for="endDate">終了日付:</label>
+      <input type="date" id="endDate" required>
+    </div>
+    
+    <div class="form-group checkbox-group">
+      <input type="checkbox" id="showDate" checked>
+      <label for="showDate">年月日を表示する</label>
+    </div>
+    
+    <div class="form-group checkbox-group">
+      <input type="checkbox" id="showDay" checked>
+      <label for="showDay">曜日を表示する</label>
+    </div>
+    
+    <button id="previewButton">プレビュー</button>
+    
+    <div class="preview-container">
+      <div id="previewArea"></div>
+      <button id="createPdfButton" style="display:none;">これで作成</button>
+    </div>
+  </div>
+
+  <script>
+    // 日付をフォーマットする関数
+    function formatDate(date, showDate, showDay) {
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
+      
+      let result = '';
+      if (showDate) {
+        result += `${year}年${month}月${day}日`;
+      }
+      if (showDay && showDate) {
+        result += `(${dayOfWeek})`;
+      } else if (showDay) {
+        result += `${dayOfWeek}曜日`;
+      }
+      
+      return result;
+    }
+    
+    // 日付の差分を計算する関数
+    function getDayDifference(start, end) {
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      const timeDiff = endDate - startDate;
+      return Math.floor(timeDiff / (1000 * 60 * 60 * 24)) + 1;
+    }
+    
+    // プレビューを作成する関数
+    function generatePreview() {
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      const showDate = document.getElementById('showDate').checked;
+      const showDay = document.getElementById('showDay').checked;
+      
+      if (!startDate || !endDate) {
+        alert('開始日と終了日を入力してください');
+        return;
+      }
+      
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+      
+      if (startDateObj > endDateObj) {
+        alert('終了日は開始日より後の日付を選択してください');
+        return;
+      }
+      
+      const totalDays = getDayDifference(startDate, endDate);
+      const previewArea = document.getElementById('previewArea');
+      previewArea.innerHTML = '';
+      previewArea.style.display = 'block';
+      
+      // ページ数を計算
+      const cardsPerPage = 6;
+      const totalPages = Math.ceil(totalDays / cardsPerPage);
+      
+      let currentDate = new Date(startDate);
+      let daysLeft = totalDays;
+      
+      for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+        const pageDiv = document.createElement('div');
+        pageDiv.className = 'pdf-page';
+        
+        const pageGrid = document.createElement('div');
+        pageGrid.className = 'page-grid';
+        
+        const cardsOnThisPage = Math.min(cardsPerPage, daysLeft);
+        
+        for (let cardIndex = 0; cardIndex < cardsOnThisPage; cardIndex++) {
+          const card = document.createElement('div');
+          card.className = 'card';
+          
+          const number = document.createElement('div');
+          number.className = 'number';
+          number.textContent = daysLeft;
+          
+          const dateText = document.createElement('div');
+          dateText.className = 'date';
+          dateText.textContent = formatDate(currentDate, showDate, showDay);
+          
+          card.appendChild(number);
+          card.appendChild(dateText);
+          pageGrid.appendChild(card);
+          
+          // 次の日に移動
+          currentDate.setDate(currentDate.getDate() + 1);
+          daysLeft--;
+        }
+        
+        // 残りのセルを空白で埋める
+        for (let i = cardsOnThisPage; i < cardsPerPage; i++) {
+          const emptyCard = document.createElement('div');
+          emptyCard.className = 'card';
+          pageGrid.appendChild(emptyCard);
+        }
+        
+        pageDiv.appendChild(pageGrid);
+        previewArea.appendChild(pageDiv);
+      }
+      
+      document.getElementById('createPdfButton').style.display = 'block';
+    }
+    
+    // PDF生成関数
+    function generatePDF() {
+      const { jsPDF } = window.jspdf;
+      
+      const previewArea = document.getElementById('previewArea');
+      const pdfPages = previewArea.querySelectorAll('.pdf-page');
+      
+      // A4サイズのPDFを作成
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      let pagePromises = [];
+      
+      pdfPages.forEach((page, index) => {
+        const promise = html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          logging: false
+        }).then(canvas => {
+          const imgData = canvas.toDataURL('image/png');
+          
+          if (index > 0) pdf.addPage();
+          
+          // キャンバスをPDFページに合わせる
+          pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+        });
+        
+        pagePromises.push(promise);
+      });
+      
+      Promise.all(pagePromises).then(() => {
+        // PDFを別タブで開く
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        window.open(pdfUrl);
+      });
+    }
+    
+    // イベントリスナーを設定
+    document.getElementById('previewButton').addEventListener('click', generatePreview);
+    document.getElementById('createPdfButton').addEventListener('click', generatePDF);
+  </script>
+</body>
+</html>
